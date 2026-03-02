@@ -5,6 +5,7 @@ import json
 import re
 from urllib.parse import parse_qs, quote_plus, urlparse
 
+import httpx
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import Page
 
@@ -38,7 +39,7 @@ class TwoGISParser(BaseParser):
         "2gis captcha",
         "подозрительную активность",
         "подтвердить, что вы не робот",
-        "captcha",
+        "captcha.2gis.ru/form",
     )
     _NOISY_NAME_TOKENS = (
         "подборк",
@@ -50,6 +51,10 @@ class TwoGISParser(BaseParser):
         "в санкт-петербурге",
     )
     _CITY_NAMES = {"москва", "санкт-петербург", "санкт петербург", "петербург", "спб"}
+    _PHOTO_URL_RE = re.compile(
+        r"https://(?:i\d+\.photo\.2gis\.com/images/profile/[^\s\"'<>]+|[\w.-]*2gis\.com/previews/[^\s\"'<>]+/image(?:_\d+x\d+)?\.png)",
+        flags=re.IGNORECASE,
+    )
 
     def __init__(
         self,
@@ -93,6 +98,7 @@ class TwoGISParser(BaseParser):
                 continue
 
             places = self._build_places(candidates, search_url=search_url, limit=context.limit)
+            await self._enrich_missing_photos(places)
             if places:
                 self.proxy_manager.report_success(proxy)
                 return places
@@ -376,6 +382,51 @@ class TwoGISParser(BaseParser):
                 continue
             seen.add(item)
             out.append(item)
+            if len(out) >= 8:
+                break
+        return out
+
+    async def _enrich_missing_photos(self, places: list[ParsedPlace]) -> None:
+        missing = [place for place in places if not place.photos and place.source_url and "2gis.ru" in place.source_url]
+        if not missing:
+            return
+
+        headers = {"User-Agent": self.user_agent_rotator.random()}
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers=headers) as client:
+            for place in missing:
+                photos = await self._fetch_photos_from_page(client, place.source_url)
+                if photos:
+                    place.photos = photos
+
+    async def _fetch_photos_from_page(self, client: httpx.AsyncClient, source_url: str) -> list[str]:
+        try:
+            response = await client.get(source_url)
+            response.raise_for_status()
+            html = response.text
+        except Exception:
+            return []
+
+        lowered = html.lower()
+        if any(token in lowered for token in self._BLOCK_TOKENS):
+            return []
+
+        raw_urls = self._PHOTO_URL_RE.findall(html)
+        if not raw_urls:
+            return []
+
+        out: list[str] = []
+        seen: set[str] = set()
+        for raw in raw_urls:
+            cleaned = raw.replace("\\/", "/")
+            lowered_url = cleaned.lower()
+            if any(token in lowered_url for token in ("favicon", "logo", "sprite", "icon")):
+                continue
+            if "/image_128x128" in lowered_url or "_320x." in lowered_url or "_128x." in lowered_url:
+                continue
+            if cleaned in seen:
+                continue
+            seen.add(cleaned)
+            out.append(cleaned)
             if len(out) >= 8:
                 break
         return out

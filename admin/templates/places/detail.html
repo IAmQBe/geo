@@ -10,6 +10,21 @@
 <p><b>AI Description:</b> {{ place.ai_description or '-' }}</p>
 <p><b>Yandex URL:</b> {{ place.source_url_yandex or '-' }}</p>
 <p><b>2GIS URL:</b> {{ place.source_url_2gis or '-' }}</p>
+<h3>Photos</h3>
+{% if place.photos %}
+<div style="display:flex; gap:12px; flex-wrap:wrap;">
+{% for photo in place.photos|sort(attribute='sort_order') %}
+  <div style="width:220px;">
+    <img src="{{ photo.url or '' }}" alt="photo-{{ photo.id }}" style="width:220px; height:150px; object-fit:cover; border:1px solid #ddd; border-radius:6px;" />
+    <div style="font-size:12px; color:#666; margin-top:4px;">
+      primary={{ photo.is_primary }} · sort={{ photo.sort_order }}
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% else %}
+<p>No photos</p>
+{% endif %}
 <h3>Reviews</h3>
 <ul>
 {% for review in place.reviews %}
