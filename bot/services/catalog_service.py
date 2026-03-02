@@ -17,3 +17,6 @@ class CatalogService:
 
     async def city_by_id(self, city_id: int) -> City | None:
         return await self.city_repo.get_by_id(city_id)
+
+    async def category_by_slug(self, slug: str) -> Category | None:
+        return await self.category_repo.get_by_slug(slug)

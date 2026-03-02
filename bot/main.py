@@ -6,7 +6,17 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from bot.config import get_settings
-from bot.handlers import menu_router, start_router
+from bot.handlers import (
+    categories_router,
+    favorites_router,
+    history_router,
+    main_menu_router,
+    places_router,
+    profile_router,
+    rating_router,
+    search_router,
+    start_router,
+)
 from db.base import init_models
 
 
@@ -26,7 +36,14 @@ async def main() -> None:
 
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(start_router)
-    dp.include_router(menu_router)
+    dp.include_router(main_menu_router)
+    dp.include_router(categories_router)
+    dp.include_router(favorites_router)
+    dp.include_router(history_router)
+    dp.include_router(search_router)
+    dp.include_router(profile_router)
+    dp.include_router(places_router)
+    dp.include_router(rating_router)
 
     await dp.start_polling(bot)
 

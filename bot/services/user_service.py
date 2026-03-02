@@ -18,5 +18,8 @@ class UserService:
             language_code=tg_user.language_code,
         )
 
+    async def get_by_telegram_id(self, telegram_id: int) -> User | None:
+        return await self.repo.get_by_telegram_id(telegram_id)
+
     async def set_city(self, user_id: int, city_id: int) -> None:
         await self.repo.set_preferred_city(user_id=user_id, city_id=city_id)
