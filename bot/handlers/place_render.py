@@ -1,6 +1,7 @@
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InputMediaPhoto, Message
+import hashlib
 import re
 from urllib.parse import urlparse
 
@@ -10,6 +11,8 @@ from bot.services import PlaceService
 from bot.states import BotStates
 from bot.utils import format_place_card
 from db.models import Place
+
+ALBUM_LIMIT = 8
 
 
 def _photo_quality_score(url: str) -> int:
@@ -79,14 +82,32 @@ def _ordered_photo_urls(place: Place) -> list[str]:
     return [row[3] for row in ordered]
 
 
-def _resolve_photo_index(value: object, total: int) -> int:
-    if total <= 0:
-        return 0
-    try:
-        index = int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        index = 0
-    return index % total
+def _album_signature(urls: list[str]) -> str:
+    payload = "|".join(urls[:ALBUM_LIMIT]).encode("utf-8")
+    return hashlib.sha1(payload).hexdigest()
+
+
+def _album_message_ids(state_data: dict) -> list[int]:
+    raw = state_data.get("current_place_album_message_ids")
+    if not isinstance(raw, list):
+        return []
+    ids: list[int] = []
+    for item in raw:
+        try:
+            ids.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+async def _drop_album_messages(message: Message, message_ids: list[int]) -> None:
+    if message.chat is None or not message_ids:
+        return
+    for message_id in message_ids:
+        try:
+            await message.bot.delete_message(chat_id=message.chat.id, message_id=message_id)
+        except TelegramBadRequest:
+            continue
 
 
 async def _update_or_send_photo(
@@ -109,6 +130,44 @@ async def _update_or_send_photo(
         await update_or_send(message, caption, reply_markup=reply_markup)
 
 
+async def _sync_album(
+    message: Message,
+    *,
+    state: FSMContext,
+    state_data: dict,
+    place_id: int,
+    photo_urls: list[str],
+) -> None:
+    previous_ids = _album_message_ids(state_data)
+    previous_signature = state_data.get("current_place_album_signature")
+    previous_place_id = state_data.get("current_place_id")
+
+    if len(photo_urls) <= 1:
+        if previous_ids:
+            await _drop_album_messages(message, previous_ids)
+        await state.update_data(current_place_album_message_ids=[], current_place_album_signature=None)
+        return
+
+    signature = _album_signature(photo_urls)
+    if previous_place_id == place_id and previous_signature == signature and previous_ids:
+        return
+
+    if previous_ids:
+        await _drop_album_messages(message, previous_ids)
+
+    media = [InputMediaPhoto(media=url) for url in photo_urls[:ALBUM_LIMIT]]
+    try:
+        sent_messages = await message.answer_media_group(media=media)
+    except TelegramBadRequest:
+        await state.update_data(current_place_album_message_ids=[], current_place_album_signature=None)
+        return
+
+    await state.update_data(
+        current_place_album_message_ids=[item.message_id for item in sent_messages],
+        current_place_album_signature=signature,
+    )
+
+
 async def render_place_card(
     message: Message,
     *,
@@ -117,7 +176,6 @@ async def render_place_card(
     user_id: int,
     place_id: int,
     back_callback: str,
-    photo_index: int | None = None,
 ) -> bool:
     place = await place_service.place_card(place_id)
     if place is None:
@@ -126,34 +184,19 @@ async def render_place_card(
 
     is_favorite = await place_service.is_favorite(user_id=user_id, place_id=place_id)
     photo_urls = _ordered_photo_urls(place)
-    photo_total = len(photo_urls)
     state_data = await state.get_data()
-    if photo_total:
-        if photo_index is None:
-            state_place_id = state_data.get("current_place_id")
-            state_index = state_data.get("current_place_photo_index", 0)
-            if state_place_id == place.id:
-                photo_index = _resolve_photo_index(state_index, photo_total)
-            else:
-                photo_index = 0
-        photo_index = _resolve_photo_index(photo_index, photo_total)
-        photo_url = photo_urls[photo_index]
-    else:
-        photo_index = 0
-        photo_url = None
+    await _sync_album(message, state=state, state_data=state_data, place_id=place.id, photo_urls=photo_urls)
 
     caption = format_place_card(place)
     reply_markup = place_card_keyboard(
         place,
         is_favorite=is_favorite,
         back_callback=back_callback,
-        photo_index=photo_index,
-        photo_total=photo_total,
     )
-    if photo_url:
+    if len(photo_urls) == 1:
         await _update_or_send_photo(
             message,
-            photo_url=photo_url,
+            photo_url=photo_urls[0],
             caption=caption,
             reply_markup=reply_markup,
         )
@@ -162,7 +205,6 @@ async def render_place_card(
     await state.update_data(
         current_place_id=place.id,
         current_place_back=back_callback,
-        current_place_photo_index=photo_index,
     )
     await state.set_state(BotStates.viewing_place_card)
     return True

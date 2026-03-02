@@ -49,9 +49,8 @@ async def paginate_place_photo(callback: CallbackQuery, state: FSMContext) -> No
     if callback.from_user is None or callback.message is None or callback.data is None:
         return
 
-    _, place_raw, index_raw = callback.data.split(":", maxsplit=2)
+    _, place_raw, _ = callback.data.split(":", maxsplit=2)
     place_id = int(place_raw)
-    photo_index = int(index_raw)
 
     async with async_session_factory() as session:
         user_service = UserService(session)
@@ -67,11 +66,10 @@ async def paginate_place_photo(callback: CallbackQuery, state: FSMContext) -> No
             user_id=user.id,
             place_id=place_id,
             back_callback=back_callback,
-            photo_index=photo_index,
         )
         await session.commit()
 
-    await callback.answer()
+    await callback.answer("Открываю альбом")
 
 
 @router.callback_query(F.data.startswith("pld:"))
