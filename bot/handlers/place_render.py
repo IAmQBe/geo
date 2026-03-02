@@ -16,20 +16,30 @@ def _photo_quality_score(url: str) -> int:
     lowered = url.lower()
     if any(token in lowered for token in ("favicon", "logo", "sprite", "map_pin", "marker", "placeholder")):
         return -999
+    if "get-discovery-int" in lowered:
+        return -999
+    if "photo.2gis.com/images/profile" in lowered:
+        return -999
+    if "/previews/" in lowered:
+        return -999
+    if any(token in lowered for token in ("_64x64", "_128x128", "/xxs", "/xs", "?w=64", "?h=64", "?w=320")):
+        return -999
 
     score = 0
-    if "photo.2gis.com/images/profile" in lowered:
-        score += 30
+    if "/main/branch/" in lowered:
+        score += 110
+    if "/main/geo/" in lowered:
+        score += 55
+    if "/reviews-photos/" in lowered:
+        score += 100
     if "get-altay" in lowered or "get-vh" in lowered:
-        score += 25
+        score += 65
     if any(token in lowered for token in ("_1920x", "_1280x", "/orig", "m_height")):
         score += 40
-    if any(token in lowered for token in ("_960x", "_640x", "/image.png")):
+    if any(token in lowered for token in ("_960x", "_640x")):
         score += 25
 
-    if "get-discovery-int" in lowered:
-        score -= 70
-    if any(token in lowered for token in ("/xxs", "/xs", "_64x64", "_128x128", "_320x", "smart_crop")):
+    if any(token in lowered for token in ("_320x", "smart_crop")):
         score -= 35
     return score
 

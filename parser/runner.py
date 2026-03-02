@@ -142,8 +142,7 @@ class ParseRunner:
                 place.source_url_2gis = parsed.source_url
                 place.source_id_2gis = parsed.source_id
 
-            if parsed.photos:
-                await self._upsert_place_photos(place, parsed.photos, city_slug, category_slug)
+            await self._upsert_place_photos(place, parsed.photos, city_slug, category_slug)
 
         await self.session.flush()
         return PipelineResult(found=len(parsed_places), added=added, updated=updated)
@@ -155,12 +154,6 @@ class ParseRunner:
         city_slug: str,
         category_slug: str,
     ) -> None:
-        prefix = f"places/{city_slug}/{category_slug}/{place.id or 'new'}"
-        try:
-            storage_keys = await self.photo_downloader.download_and_store(photo_urls, prefix)
-        except Exception:
-            storage_keys = []
-
         if place.id is None:
             await self.session.flush()
         if place.id is None:
@@ -169,20 +162,58 @@ class ParseRunner:
         existing_rows = await self.session.execute(
             select(PlacePhoto).where(PlacePhoto.place_id == place.id)
         )
-        seen_keys = {photo.storage_key for photo in existing_rows.scalars().all() if photo.storage_key}
+        existing_photos = list(existing_rows.scalars().all())
 
-        for idx, storage_key in enumerate(storage_keys):
-            if storage_key in seen_keys:
+        normalized_urls: list[str] = []
+        seen_urls: set[str] = set()
+        for url in photo_urls:
+            value = (url or "").strip()
+            if not value or value in seen_urls:
                 continue
+            seen_urls.add(value)
+            normalized_urls.append(value)
+            if len(normalized_urls) >= 12:
+                break
+
+        if not normalized_urls:
+            for photo in existing_photos:
+                await self.session.delete(photo)
+            return
+
+        prefix = f"places/{city_slug}/{category_slug}/{place.id or 'new'}"
+        try:
+            stored_photos = await self.photo_downloader.download_and_store(normalized_urls, prefix)
+        except Exception:
+            stored_photos = []
+
+        downloaded_by_url = {source_url: storage_key for source_url, storage_key in stored_photos if storage_key}
+
+        # Always replace outdated gallery when parser returned a new URL set.
+        for photo in existing_photos:
+            await self.session.delete(photo)
+
+        if not downloaded_by_url:
+            return
+
+        seen_storage_keys: set[str] = set()
+        insert_index = 0
+        for source_url in normalized_urls:
+            storage_key = downloaded_by_url.get(source_url)
+            if not storage_key:
+                continue
+            if storage_key in seen_storage_keys:
+                continue
+            seen_storage_keys.add(storage_key)
             self.session.add(
                 PlacePhoto(
                     place_id=place.id,
                     storage_key=storage_key,
-                    url=photo_urls[idx] if idx < len(photo_urls) else None,
-                    sort_order=idx,
-                    is_primary=idx == 0,
+                    url=source_url,
+                    sort_order=insert_index,
+                    is_primary=insert_index == 0,
                 )
             )
+            insert_index += 1
 
     async def _find_existing_place(self, source: str, source_id: str | None, city_id: int) -> Place | None:
         if not source_id:

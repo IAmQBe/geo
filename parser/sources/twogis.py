@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import html as html_lib
 import json
 import re
 from urllib.parse import parse_qs, quote_plus, urlparse
@@ -51,8 +52,17 @@ class TwoGISParser(BaseParser):
         "в санкт-петербурге",
     )
     _CITY_NAMES = {"москва", "санкт-петербург", "санкт петербург", "петербург", "спб"}
-    _PHOTO_URL_RE = re.compile(
-        r"https://(?:i\d+\.photo\.2gis\.com/images/profile/[^\s\"'<>]+|[\w.-]*2gis\.com/previews/[^\s\"'<>]+/image(?:_\d+x\d+)?\.png)",
+    _PHOTO_URL_RE = re.compile(r"https://[^\s\"'<>]+", flags=re.IGNORECASE)
+    _REVIEW_PHOTO_RE = re.compile(
+        r"https://cachizer\d+\.2gis\.com/reviews-photos/[^\s\"'<>]+\.jpg(?:\?[^\s\"'<>]+)?",
+        flags=re.IGNORECASE,
+    )
+    _MAIN_PHOTO_RE = re.compile(
+        r"https://i\d+\.photo\.2gis\.com/main/(?:branch/\d+/[0-9A-Za-z_-]+/common|geo/\d+/\d+/view)",
+        flags=re.IGNORECASE,
+    )
+    _PREVIEW_PHOTO_RE = re.compile(
+        r"https://[\w.-]*2gis\.com/previews/[^\s\"'<>]+",
         flags=re.IGNORECASE,
     )
 
@@ -98,7 +108,7 @@ class TwoGISParser(BaseParser):
                 continue
 
             places = self._build_places(candidates, search_url=search_url, limit=context.limit)
-            await self._enrich_missing_photos(places)
+            await self._enrich_photos(places)
             if places:
                 self.proxy_manager.report_success(proxy)
                 return places
@@ -377,22 +387,31 @@ class TwoGISParser(BaseParser):
         for item in candidate.get("photos", []):
             if not isinstance(item, str) or not is_http_url(item):
                 continue
-            raw_urls.append(item.strip())
-        return self._rank_photo_urls(raw_urls, limit=8)
+            cleaned = self._clean_url_candidate(item.strip())
+            if cleaned:
+                raw_urls.append(cleaned)
 
-    async def _enrich_missing_photos(self, places: list[ParsedPlace]) -> None:
-        missing = [place for place in places if not place.photos and place.source_url and "2gis.ru" in place.source_url]
-        if not missing:
+        normalized = [self._normalize_photo_url(url) for url in raw_urls if url]
+        source_url = find_text(candidate, {"source_url", "url", "link"})
+        source_id = self._extract_source_id(source_url) if source_url else None
+        specific = self._select_place_specific_urls(normalized, source_id=source_id)
+        if not specific:
+            return []
+        return self._rank_photo_urls(specific, limit=8)
+
+    async def _enrich_photos(self, places: list[ParsedPlace]) -> None:
+        candidates = [place for place in places if place.source_url and "2gis.ru" in place.source_url]
+        if not candidates:
             return
 
         headers = {"User-Agent": self.user_agent_rotator.random()}
         async with httpx.AsyncClient(timeout=20, follow_redirects=True, headers=headers) as client:
-            for place in missing:
-                photos = await self._fetch_photos_from_page(client, place.source_url)
+            for place in candidates:
+                photos = await self._fetch_photos_from_page(client, place.source_url, place.source_id)
                 if photos:
                     place.photos = photos
 
-    async def _fetch_photos_from_page(self, client: httpx.AsyncClient, source_url: str) -> list[str]:
+    async def _fetch_photos_from_page(self, client: httpx.AsyncClient, source_url: str, source_id: str | None) -> list[str]:
         try:
             response = await client.get(source_url)
             response.raise_for_status()
@@ -404,12 +423,45 @@ class TwoGISParser(BaseParser):
         if any(token in lowered for token in self._BLOCK_TOKENS):
             return []
 
-        raw_urls = self._PHOTO_URL_RE.findall(html)
-        if not raw_urls:
+        return self._extract_photos_from_html(html, source_id)
+
+    def _extract_photos_from_html(self, html: str, source_id: str | None) -> list[str]:
+        decoded = html_lib.unescape(html.replace("\\/", "/"))
+        raw_urls: list[str] = []
+
+        raw_urls.extend(self._MAIN_PHOTO_RE.findall(decoded))
+        raw_urls.extend(self._REVIEW_PHOTO_RE.findall(decoded))
+        raw_urls.extend(self._PREVIEW_PHOTO_RE.findall(decoded))
+
+        # Generic URL scan helps catch sources embedded in JSON payloads.
+        for raw in self._PHOTO_URL_RE.findall(decoded):
+            if "2gis.com" not in raw.lower():
+                continue
+            if not any(token in raw.lower() for token in ("/reviews-photos/", ".photo.2gis.com/main/", "/previews/")):
+                continue
+            raw_urls.append(raw)
+
+        cleaned_urls = [self._clean_url_candidate(url) for url in raw_urls]
+        normalized = [self._normalize_photo_url(url) for url in cleaned_urls if url]
+        normalized = [url for url in normalized if url]
+        if not normalized:
             return []
 
-        normalized = [raw.replace("\\/", "/").strip() for raw in raw_urls]
+        specific = self._select_place_specific_urls(normalized, source_id=source_id)
+        if specific:
+            ranked = self._rank_photo_urls(specific, limit=8)
+            if ranked:
+                return ranked
+
         return self._rank_photo_urls(normalized, limit=8)
+
+    def _clean_url_candidate(self, url: str) -> str:
+        value = url.strip().replace("\\/", "/")
+        value = html_lib.unescape(value)
+        for token in ('"', "'", "<", ">", ")", "]", "}", ",", ";"):
+            if token in value:
+                value = value.split(token, maxsplit=1)[0]
+        return value.rstrip(").,;")
 
     def _canonicalize_source_url(self, source_url: str) -> str:
         parsed = urlparse(source_url)
@@ -469,16 +521,29 @@ class TwoGISParser(BaseParser):
         lowered = url.lower()
         if any(token in lowered for token in ("favicon", "logo", "sprite", "placeholder", "marker", "map_pin")):
             return -999
+        if "photo.2gis.com/images/profile" in lowered:
+            return -999
 
         score = 0
-        if "photo.2gis.com/images/profile" in lowered:
-            score += 30
-        if any(token in lowered for token in ("_1920x", "_1280x", "/orig", "m_height")):
+        if "/main/branch/" in lowered:
+            score += 120
+        if "/main/geo/" in lowered:
+            score += 55
+        if "/reviews-photos/" in lowered:
+            score += 100
+        if "/previews/" in lowered:
+            score += 10
+        if any(token in lowered for token in ("_1920x", "_1280x", "_1920.png", "/orig", "m_height", "?w=1920")):
             score += 35
         if any(token in lowered for token in ("_960x", "_640x", "/image.png")):
             score += 20
 
-        if any(token in lowered for token in ("/image_128x128", "_64x64", "_128x.", "_320x.", "/xxs", "/xs")):
+        if "/previews/" in lowered and "api-version=2.0" not in lowered:
+            score -= 60
+        if any(
+            token in lowered
+            for token in ("/image_128x128", "_64x64", "_128x.", "_320x.", "/xxs", "/xs", "?w=320", "?h=64", "w=64")
+        ):
             score -= 35
         return score
 
@@ -487,6 +552,89 @@ class TwoGISParser(BaseParser):
         path = parsed.path.lower()
         path = path.replace("/image_128x128.png", "/image.png")
         path = re.sub(r"_(?:64x64|128x128|320x|640x|960x|1280x|1920x)(?=\.)", "", path)
+        path = re.sub(r"_(?:64_64|320|640|1920)(?=\.)", "", path)
+        if "/reviews-photos/" in path:
+            path = path.split("?", maxsplit=1)[0]
         if path.endswith(("/xxs", "/xs", "/s", "/m", "/l", "/xl", "/xxl", "/m_height", "/orig")):
             path = path.rsplit("/", maxsplit=1)[0]
         return f"{parsed.netloc.lower()}{path}"
+
+    def _normalize_photo_url(self, url: str) -> str:
+        lowered = url.lower()
+        if "/reviews-photos/" in lowered:
+            base = url.split("?", maxsplit=1)[0]
+            return f"{base}?w=1920"
+        if "/previews/" in lowered:
+            raw = url.split("?", maxsplit=1)[0]
+            # Keep preview URLs only in API form accepted by CDN.
+            if re.search(r"/\d+/ru/\d+x\d+$", raw):
+                return f"{raw}?api-version=2.0"
+            if "/image_64_64.png" in raw:
+                return f"{raw.replace('/image_64_64.png', '/328x170')}?api-version=2.0"
+            if "/image_64x64.png" in raw:
+                return f"{raw.replace('/image_64x64.png', '/328x170')}?api-version=2.0"
+            if any(token in raw for token in ("/image.png", "/image_320.png", "/image_640.png", "/image_1920.png")):
+                converted = re.sub(r"/\d+/ru/image(?:_\d+(?:x\d+|_\d+)?)?\.png$", "/3/ru/656x340", raw)
+                if converted != raw:
+                    return f"{converted}?api-version=2.0"
+            return f"{raw}?api-version=2.0"
+        return url
+
+    def _select_place_specific_urls(self, urls: list[str], source_id: str | None = None) -> list[str]:
+        selected: list[str] = []
+        seen: set[str] = set()
+
+        for url in urls:
+            lowered = url.lower()
+            if "/main/branch/" not in lowered:
+                continue
+            if source_id and f"/{source_id.lower()}/common" not in lowered:
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            selected.append(url)
+
+        for url in urls:
+            lowered = url.lower()
+            if "/reviews-photos/" not in lowered:
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            selected.append(url)
+
+        for url in urls:
+            lowered = url.lower()
+            if "/main/geo/" not in lowered:
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            selected.append(url)
+
+        if selected:
+            return selected
+
+        preview_groups: dict[str, int] = {}
+        for url in urls:
+            match = re.search(r"/previews/(\d+)/", url)
+            if match:
+                group = match.group(1)
+                preview_groups[group] = preview_groups.get(group, 0) + 1
+
+        dominant_group = None
+        if preview_groups:
+            dominant_group = max(preview_groups.items(), key=lambda item: item[1])[0]
+
+        for url in urls:
+            lowered = url.lower()
+            is_dominant_preview = bool(dominant_group and f"/previews/{dominant_group}/" in lowered and "api-version=2.0" in lowered)
+            if not is_dominant_preview:
+                continue
+            if url in seen:
+                continue
+            seen.add(url)
+            selected.append(url)
+
+        return selected

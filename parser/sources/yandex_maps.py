@@ -365,7 +365,7 @@ class YandexMapsParser(BaseParser):
         for item in candidate.get("photos", []):
             if not isinstance(item, str) or not is_http_url(item):
                 continue
-            cleaned = item.strip()
+            cleaned = self._normalize_photo_url(item.strip())
             if not cleaned:
                 continue
 
@@ -382,9 +382,19 @@ class YandexMapsParser(BaseParser):
         ordered = sorted(ranked.values(), key=lambda row: row[0], reverse=True)
         return [url for _, url in ordered[:8]]
 
+    def _normalize_photo_url(self, url: str) -> str:
+        lowered = url.lower()
+        if "avatars.mds.yandex.net/get-" in lowered:
+            for suffix in ("/m_height", "/l_height", "/xxl_height"):
+                if lowered.endswith(suffix):
+                    return url[: -len(suffix)] + "/orig"
+        return url
+
     def _photo_score(self, url: str) -> int:
         lowered = url.lower()
         if any(token in lowered for token in ("favicon", "logo", "sprite", "marker", "map_pin", "placeholder")):
+            return -999
+        if "get-discovery-int" in lowered:
             return -999
 
         score = 0
@@ -395,8 +405,6 @@ class YandexMapsParser(BaseParser):
         if any(token in lowered for token in ("_1920x", "_1280x", "_960x", "_640x")):
             score += 20
 
-        if "get-discovery-int" in lowered:
-            score -= 70
         if any(token in lowered for token in ("/xxs", "/xs", "_64x64", "_128x128", "_320x", "smart_crop")):
             score -= 40
         return score
