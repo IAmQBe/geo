@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<h1>Users</h1>
+<table>
+  <thead>
+    <tr><th>ID</th><th>Telegram ID</th><th>Name</th><th>City</th><th>Active</th></tr>
+  </thead>
+  <tbody>
+    {% for user in users %}
+      <tr>
+        <td><a href="/admin/users/{{ user.id }}">{{ user.id }}</a></td>
+        <td>{{ user.telegram_id }}</td>
+        <td>{{ user.first_name or '' }} {{ user.last_name or '' }}</td>
+        <td>{{ user.preferred_city.name if user.preferred_city else '-' }}</td>
+        <td>{{ user.is_active }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

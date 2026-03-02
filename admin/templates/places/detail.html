@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Place {{ place.id }}{% endblock %}
+{% block content %}
+<h1>{{ place.name }}</h1>
+<p><b>City:</b> {{ place.city.name if place.city else '-' }}</p>
+<p><b>Category:</b> {{ place.category.name_ru if place.category else '-' }}</p>
+<p><b>Address:</b> {{ place.address or '-' }}</p>
+<p><b>Rating:</b> {{ place.rating or '-' }} ({{ place.review_count }} reviews)</p>
+<p><b>Description:</b> {{ place.description or '-' }}</p>
+<p><b>AI Description:</b> {{ place.ai_description or '-' }}</p>
+<p><b>Yandex URL:</b> {{ place.source_url_yandex or '-' }}</p>
+<p><b>2GIS URL:</b> {{ place.source_url_2gis or '-' }}</p>
+<h3>Reviews</h3>
+<ul>
+{% for review in place.reviews %}
+  <li>⭐ {{ review.rating }} — {{ review.text or '' }}</li>
+{% else %}
+  <li>No reviews</li>
+{% endfor %}
+</ul>
+{% endblock %}

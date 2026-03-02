@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Places{% endblock %}
+{% block content %}
+<h1>Places</h1>
+<table>
+  <thead>
+    <tr><th>ID</th><th>Name</th><th>City</th><th>Category</th><th>Rating</th><th>Active</th></tr>
+  </thead>
+  <tbody>
+    {% for place in places %}
+      <tr>
+        <td><a href="/admin/places/{{ place.id }}">{{ place.id }}</a></td>
+        <td>{{ place.name }}</td>
+        <td>{{ place.city.name if place.city else '-' }}</td>
+        <td>{{ place.category.name_ru if place.category else '-' }}</td>
+        <td>{{ place.rating or '-' }}</td>
+        <td>{{ place.is_active }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

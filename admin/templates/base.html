@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Jam Bot Admin{% endblock %}</title>
+    <style>
+      body { font-family: "SF Mono", Menlo, Monaco, monospace; background: #f2f1ea; color: #222; margin: 0; }
+      header { background: #111; color: #fff; padding: 12px 20px; }
+      nav a { color: #fff; margin-right: 14px; text-decoration: none; }
+      main { padding: 20px; }
+      table { border-collapse: collapse; width: 100%; background: #fff; }
+      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+      .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+      .card { background: #fff; border: 1px solid #ddd; padding: 12px; }
+      .muted { color: #666; }
+      .btn { display: inline-block; background: #111; color: #fff; padding: 8px 12px; text-decoration: none; border: none; cursor: pointer; }
+      .btn-light { background: #e7e7e7; color: #111; }
+      form.inline { display: inline; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav>
+        <a href="/admin/">Dashboard</a>
+        <a href="/admin/places/">Places</a>
+        <a href="/admin/users/">Users</a>
+        <a href="/admin/parse-jobs/">Parse jobs</a>
+        <a href="/admin/categories/">Categories</a>
+        <a href="/admin/cities/">Cities</a>
+        <a href="/admin/reviews/">Reviews</a>
+        <form class="inline" method="post" action="/admin/logout">
+          <button class="btn btn-light" type="submit">Logout</button>
+        </form>
+      </nav>
+    </header>
+    <main>{% block content %}{% endblock %}</main>
+  </body>
+</html>

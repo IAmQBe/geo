@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  bot:
+    environment:
+      DATABASE_ECHO: "true"
+      LOG_LEVEL: DEBUG
+    volumes:
+      - .:/app
+
+  admin:
+    environment:
+      LOG_LEVEL: DEBUG
+    volumes:
+      - .:/app
+
+  celery-worker:
+    environment:
+      LOG_LEVEL: DEBUG
+    volumes:
+      - .:/app
+
+  celery-beat:
+    environment:
+      LOG_LEVEL: DEBUG
+    volumes:
+      - .:/app

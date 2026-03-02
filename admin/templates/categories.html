@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Categories{% endblock %}
+{% block content %}
+<h1>Categories</h1>
+<table>
+  <thead>
+    <tr><th>ID</th><th>Slug</th><th>Name</th><th>Emoji</th><th>Sort</th><th>Active</th></tr>
+  </thead>
+  <tbody>
+    {% for item in categories %}
+      <tr>
+        <td>{{ item.id }}</td>
+        <td>{{ item.slug }}</td>
+        <td>{{ item.name_ru }}</td>
+        <td>{{ item.emoji or '-' }}</td>
+        <td>{{ item.sort_order }}</td>
+        <td>{{ item.is_active }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

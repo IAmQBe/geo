@@ -1,0 +1,22 @@
+{
+  "id": null,
+  "title": "Parser Metrics",
+  "tags": ["jambot", "parser"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Parsed Places",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "sum(rate(parser_places_processed_total[15m]))",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

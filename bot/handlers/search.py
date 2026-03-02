@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from bot.handlers.helpers import PAGE_SIZE, ensure_user, update_or_send
 from bot.handlers.place_render import render_place_card
 from bot.keyboards import search_results_keyboard
-from bot.services import PlaceService, UserService
+from bot.services import CatalogService, PlaceService, UserService
 from bot.states import BotStates
 from db.base import async_session_factory
 from db.models import User
@@ -89,6 +89,7 @@ async def handle_search_query(message: Message, state: FSMContext) -> None:
 
     async with async_session_factory() as session:
         user_service = UserService(session)
+        catalog_service = CatalogService(session)
         place_service = PlaceService(session)
 
         user = await ensure_user(user_service, message.from_user)
@@ -97,7 +98,12 @@ async def handle_search_query(message: Message, state: FSMContext) -> None:
             await session.commit()
             return
 
-        results = await place_service.search_places(user.preferred_city_id, query)
+        city = await catalog_service.city_by_id(user.preferred_city_id)
+        results = await place_service.search_places(
+            user.preferred_city_id,
+            query,
+            city_name=city.name if city else "",
+        )
         await state.update_data(search_result_ids=[place.id for place in results], search_query=query)
         await _render_search_page(message, state=state, place_service=place_service, page=1)
         await session.commit()

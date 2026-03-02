@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}User {{ user.id }}{% endblock %}
+{% block content %}
+<h1>User #{{ user.id }}</h1>
+<p><b>Telegram:</b> {{ user.telegram_id }}</p>
+<p><b>Username:</b> {{ user.username or '-' }}</p>
+<p><b>Name:</b> {{ user.first_name or '' }} {{ user.last_name or '' }}</p>
+<p><b>Language:</b> {{ user.language_code }}</p>
+<p><b>City:</b> {{ user.preferred_city.name if user.preferred_city else '-' }}</p>
+<p><b>Active:</b> {{ user.is_active }}</p>
+<p><b>Blocked:</b> {{ user.is_blocked }}</p>
+<p><b>Favorites count:</b> {{ user.favorites|length }}</p>
+<p><b>Visits count:</b> {{ user.visits|length }}</p>
+{% endblock %}

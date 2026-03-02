@@ -1,5 +1,7 @@
 from math import ceil
 
+from ai.nl_search import NaturalLanguageSearch
+from bot.config import get_settings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Place, VisitHistory
@@ -8,6 +10,8 @@ from db.repositories import FavoritesRepository, HistoryRepository, PlaceReposit
 
 class PlaceService:
     def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.settings = get_settings()
         self.place_repo = PlaceRepository(session)
         self.favorites_repo = FavoritesRepository(session)
         self.history_repo = HistoryRepository(session)
@@ -67,7 +71,25 @@ class PlaceService:
         total_pages = max(1, ceil(total / page_size)) if total else 1
         return visits, total_pages
 
-    async def search_places(self, city_id: int, query: str, limit: int = 30) -> list[Place]:
+    async def search_places(
+        self,
+        city_id: int,
+        query: str,
+        city_name: str = "",
+        limit: int = 30,
+    ) -> list[Place]:
+        if self.settings.ai_enabled:
+            try:
+                nl_search = NaturalLanguageSearch(self.session)
+                return await nl_search.search(
+                    city_id=city_id,
+                    city_name=city_name or "Неизвестный город",
+                    query=query,
+                    limit=limit,
+                )
+            except Exception:
+                # Fall back to deterministic DB search when AI provider is unavailable.
+                pass
         return await self.place_repo.search(city_id=city_id, query_text=query, limit=limit)
 
     async def places_by_ids(self, place_ids: list[int]) -> list[Place]:

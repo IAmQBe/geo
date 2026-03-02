@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Reviews{% endblock %}
+{% block content %}
+<h1>Reviews</h1>
+<table>
+  <thead>
+    <tr><th>ID</th><th>User</th><th>Place</th><th>Rating</th><th>Text</th><th>Visible</th><th>Moderated</th></tr>
+  </thead>
+  <tbody>
+    {% for review in reviews %}
+      <tr>
+        <td>{{ review.id }}</td>
+        <td>{{ review.user.telegram_id if review.user else '-' }}</td>
+        <td>{{ review.place.name if review.place else '-' }}</td>
+        <td>{{ review.rating }}</td>
+        <td>{{ review.text or '' }}</td>
+        <td>{{ review.is_visible }}</td>
+        <td>{{ review.is_moderated }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

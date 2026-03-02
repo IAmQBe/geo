@@ -1,3 +1,4 @@
+from bot.handlers.admin import router as admin_router
 from bot.handlers.categories import router as categories_router
 from bot.handlers.favorites import router as favorites_router
 from bot.handlers.history import router as history_router
@@ -9,6 +10,7 @@ from bot.handlers.search import router as search_router
 from bot.handlers.start import router as start_router
 
 __all__ = [
+    "admin_router",
     "categories_router",
     "favorites_router",
     "history_router",

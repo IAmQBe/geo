@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Cities{% endblock %}
+{% block content %}
+<h1>Cities</h1>
+<table>
+  <thead>
+    <tr><th>ID</th><th>Name</th><th>Region</th><th>Timezone</th><th>Active</th></tr>
+  </thead>
+  <tbody>
+    {% for item in cities %}
+      <tr>
+        <td>{{ item.id }}</td>
+        <td>{{ item.name }}</td>
+        <td>{{ item.region or '-' }}</td>
+        <td>{{ item.timezone }}</td>
+        <td>{{ item.is_active }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

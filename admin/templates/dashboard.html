@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="cards">
+  <div class="card"><div class="muted">Places</div><div>{{ places_count }}</div></div>
+  <div class="card"><div class="muted">Users</div><div>{{ users_count }}</div></div>
+  <div class="card"><div class="muted">Failed Parse Jobs</div><div>{{ failed_jobs }}</div></div>
+</div>
+{% endblock %}

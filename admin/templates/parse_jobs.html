@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Parse Jobs{% endblock %}
+{% block content %}
+<h1>Parse Jobs</h1>
+<form method="post" action="/admin/parse-jobs/run">
+  <input name="source" placeholder="source (yandex|2gis)" required />
+  <input name="city_slug" placeholder="city slug" required />
+  <input name="category_slug" placeholder="category slug" required />
+  <input name="limit" type="number" min="1" max="200" value="30" />
+  <button class="btn" type="submit">Run parse</button>
+</form>
+<table>
+  <thead>
+    <tr><th>ID</th><th>Source</th><th>City</th><th>Category</th><th>Status</th><th>Found</th><th>Added</th><th>Updated</th></tr>
+  </thead>
+  <tbody>
+    {% for job in jobs %}
+      <tr>
+        <td>{{ job.id }}</td><td>{{ job.source }}</td><td>{{ job.city_slug }}</td><td>{{ job.category_slug }}</td>
+        <td>{{ job.status }}</td><td>{{ job.places_found }}</td><td>{{ job.places_added }}</td><td>{{ job.places_updated }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
