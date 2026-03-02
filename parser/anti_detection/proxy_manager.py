@@ -17,6 +17,10 @@ class ProxyManager:
         self._proxy_list_url = proxy_list_url
         self._pool: list[ProxyItem] = []
 
+    @property
+    def size(self) -> int:
+        return len(self._pool)
+
     async def refresh(self) -> None:
         if not self._proxy_list_url:
             self._pool = []
@@ -26,7 +30,18 @@ class ProxyManager:
             response = await client.get(self._proxy_list_url)
             response.raise_for_status()
             rows = [row.strip() for row in response.text.splitlines() if row.strip()]
-            self._pool = [ProxyItem(url=row) for row in rows]
+            normalized: list[str] = []
+            seen: set[str] = set()
+            for row in rows:
+                value = row
+                if "://" not in value:
+                    value = f"http://{value}"
+                if value in seen:
+                    continue
+                seen.add(value)
+                normalized.append(value)
+
+            self._pool = [ProxyItem(url=row) for row in normalized]
 
     def pick(self) -> str | None:
         if not self._pool:
