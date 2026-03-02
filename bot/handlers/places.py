@@ -44,6 +44,36 @@ async def open_place_by_id(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("plph:"))
+async def paginate_place_photo(callback: CallbackQuery, state: FSMContext) -> None:
+    if callback.from_user is None or callback.message is None or callback.data is None:
+        return
+
+    _, place_raw, index_raw = callback.data.split(":", maxsplit=2)
+    place_id = int(place_raw)
+    photo_index = int(index_raw)
+
+    async with async_session_factory() as session:
+        user_service = UserService(session)
+        place_service = PlaceService(session)
+        user = await ensure_user(user_service, callback.from_user)
+        state_data = await state.get_data()
+        back_callback = state_data.get("current_place_back", "menu:main")
+
+        await render_place_card(
+            callback.message,
+            place_service=place_service,
+            state=state,
+            user_id=user.id,
+            place_id=place_id,
+            back_callback=back_callback,
+            photo_index=photo_index,
+        )
+        await session.commit()
+
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("pld:"))
 async def show_place_details(callback: CallbackQuery) -> None:
     if callback.message is None or callback.data is None:

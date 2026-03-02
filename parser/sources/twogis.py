@@ -373,18 +373,12 @@ class TwoGISParser(BaseParser):
         return None, None
 
     def _extract_photos(self, candidate: dict) -> list[str]:
-        out: list[str] = []
-        seen: set[str] = set()
+        raw_urls: list[str] = []
         for item in candidate.get("photos", []):
             if not isinstance(item, str) or not is_http_url(item):
                 continue
-            if item in seen:
-                continue
-            seen.add(item)
-            out.append(item)
-            if len(out) >= 8:
-                break
-        return out
+            raw_urls.append(item.strip())
+        return self._rank_photo_urls(raw_urls, limit=8)
 
     async def _enrich_missing_photos(self, places: list[ParsedPlace]) -> None:
         missing = [place for place in places if not place.photos and place.source_url and "2gis.ru" in place.source_url]
@@ -414,22 +408,8 @@ class TwoGISParser(BaseParser):
         if not raw_urls:
             return []
 
-        out: list[str] = []
-        seen: set[str] = set()
-        for raw in raw_urls:
-            cleaned = raw.replace("\\/", "/")
-            lowered_url = cleaned.lower()
-            if any(token in lowered_url for token in ("favicon", "logo", "sprite", "icon")):
-                continue
-            if "/image_128x128" in lowered_url or "_320x." in lowered_url or "_128x." in lowered_url:
-                continue
-            if cleaned in seen:
-                continue
-            seen.add(cleaned)
-            out.append(cleaned)
-            if len(out) >= 8:
-                break
-        return out
+        normalized = [raw.replace("\\/", "/").strip() for raw in raw_urls]
+        return self._rank_photo_urls(normalized, limit=8)
 
     def _canonicalize_source_url(self, source_url: str) -> str:
         parsed = urlparse(source_url)
@@ -467,3 +447,46 @@ class TwoGISParser(BaseParser):
                 except (TypeError, ValueError):
                     return None, None
         return None, None
+
+    def _rank_photo_urls(self, urls: list[str], limit: int) -> list[str]:
+        ranked: dict[str, tuple[int, str]] = {}
+        for url in urls:
+            if not url or not is_http_url(url):
+                continue
+            score = self._photo_score(url)
+            if score < 0:
+                continue
+            key = self._photo_dedupe_key(url)
+            candidate = (score, url)
+            existing = ranked.get(key)
+            if existing is None or candidate > existing:
+                ranked[key] = candidate
+
+        ordered = sorted(ranked.values(), key=lambda row: row[0], reverse=True)
+        return [url for _, url in ordered[:limit]]
+
+    def _photo_score(self, url: str) -> int:
+        lowered = url.lower()
+        if any(token in lowered for token in ("favicon", "logo", "sprite", "placeholder", "marker", "map_pin")):
+            return -999
+
+        score = 0
+        if "photo.2gis.com/images/profile" in lowered:
+            score += 30
+        if any(token in lowered for token in ("_1920x", "_1280x", "/orig", "m_height")):
+            score += 35
+        if any(token in lowered for token in ("_960x", "_640x", "/image.png")):
+            score += 20
+
+        if any(token in lowered for token in ("/image_128x128", "_64x64", "_128x.", "_320x.", "/xxs", "/xs")):
+            score -= 35
+        return score
+
+    def _photo_dedupe_key(self, url: str) -> str:
+        parsed = urlparse(url)
+        path = parsed.path.lower()
+        path = path.replace("/image_128x128.png", "/image.png")
+        path = re.sub(r"_(?:64x64|128x128|320x|640x|960x|1280x|1920x)(?=\.)", "", path)
+        if path.endswith(("/xxs", "/xs", "/s", "/m", "/l", "/xl", "/xxl", "/m_height", "/orig")):
+            path = path.rsplit("/", maxsplit=1)[0]
+        return f"{parsed.netloc.lower()}{path}"

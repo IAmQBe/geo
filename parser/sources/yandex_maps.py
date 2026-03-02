@@ -361,15 +361,51 @@ class YandexMapsParser(BaseParser):
         return None, None
 
     def _extract_photos(self, candidate: dict) -> list[str]:
-        out: list[str] = []
-        seen: set[str] = set()
+        ranked: dict[str, tuple[int, str]] = {}
         for item in candidate.get("photos", []):
             if not isinstance(item, str) or not is_http_url(item):
                 continue
-            if item in seen:
+            cleaned = item.strip()
+            if not cleaned:
                 continue
-            seen.add(item)
-            out.append(item)
-            if len(out) >= 8:
-                break
-        return out
+
+            score = self._photo_score(cleaned)
+            if score < 0:
+                continue
+
+            key = self._photo_dedupe_key(cleaned)
+            existing = ranked.get(key)
+            candidate_value = (score, cleaned)
+            if existing is None or candidate_value > existing:
+                ranked[key] = candidate_value
+
+        ordered = sorted(ranked.values(), key=lambda row: row[0], reverse=True)
+        return [url for _, url in ordered[:8]]
+
+    def _photo_score(self, url: str) -> int:
+        lowered = url.lower()
+        if any(token in lowered for token in ("favicon", "logo", "sprite", "marker", "map_pin", "placeholder")):
+            return -999
+
+        score = 0
+        if "get-altay" in lowered or "get-vh" in lowered:
+            score += 30
+        if any(token in lowered for token in ("/orig", "m_height")):
+            score += 25
+        if any(token in lowered for token in ("_1920x", "_1280x", "_960x", "_640x")):
+            score += 20
+
+        if "get-discovery-int" in lowered:
+            score -= 70
+        if any(token in lowered for token in ("/xxs", "/xs", "_64x64", "_128x128", "_320x", "smart_crop")):
+            score -= 40
+        return score
+
+    def _photo_dedupe_key(self, url: str) -> str:
+        parsed = urlparse(url)
+        path = parsed.path.lower()
+        path = re.sub(r"_(?:64x64|128x128|320x|640x|960x|1280x|1920x)(?=\.)", "", path)
+        path = re.sub(r"/smart_crop_[^/]+", "", path)
+        if path.endswith(("/xxs", "/xs", "/s", "/m", "/l", "/xl", "/xxl", "/m_height", "/orig")):
+            path = path.rsplit("/", maxsplit=1)[0]
+        return f"{parsed.netloc.lower()}{path}"
